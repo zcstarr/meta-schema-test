@@ -11,3 +11,8 @@
 ## 2026-10-02 - version dirs seeded
 - Created `v1.3/` + `v1.4/`, copied root `schema.md` into each as `schema.md` (currently empty placeholders).
 - Serve: `/v1.3/schema` -> `./v1.3/schema.md`, `/v1.4/schema` -> `./v1.4/schema.md`. Edit each copy independently to diverge versions.
+
+## 2026-10-02 - first commit, push pending gh auth
+- Committed `846ba4f` (7 files: serve.py, routes.example.json, schema.md, v1.3/+v1.4/schema.md, LLMLOG.MD, .gitignore). GPG sign disabled for sandbox commit.
+- `origin` set to `git@github.com:zcstarr/meta-schema-test.git`.
+- BLOCKED: `gh` keyring token invalid (`gh auth login` needed) + remote repo not yet created, so no push yet.
