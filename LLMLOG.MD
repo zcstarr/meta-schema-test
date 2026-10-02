@@ -16,3 +16,8 @@
 - Committed `846ba4f` (7 files: serve.py, routes.example.json, schema.md, v1.3/+v1.4/schema.md, LLMLOG.MD, .gitignore). GPG sign disabled for sandbox commit.
 - `origin` set to `git@github.com:zcstarr/meta-schema-test.git`.
 - BLOCKED: `gh` keyring token invalid (`gh auth login` needed) + remote repo not yet created, so no push yet.
+
+## 2026-10-02 - pushed to zcstarr/meta-schema-test
+- User re-authed `gh`; repo already existed (created it themselves).
+- Fixed stale `github.com` RSA host key in `~/.ssh/known_hosts` (server presented `SHA256:uNiVztksCs...`, matches GitHub's published fingerprint).
+- Pushed `846ba4f` + `4c3554f` to `origin/main`. Remote: `git@github.com:zcstarr/meta-schema-test.git`. Tree clean.
