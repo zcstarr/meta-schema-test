@@ -1,0 +1,16 @@
+[
+  { "version": ["v1.3", "v1.4"], "path": "/old", "status": 301, "location": "/new" },
+  { "version": ["v1.3", "v1.4"], "path": "/temp", "status": 302, "location": "/new" },
+  { "path": "/v1.3/perm307", "status": 307, "location": "/v1.3/new" },
+  { "path": "/v1.4/perm307", "status": 307, "location": "/v1.4/new" },
+  { "version": ["v1.3", "v1.4"], "path": "/new", "status": 200, "body": "landed" },
+  { "path": "/old", "status": 301, "location": "/new" },
+  { "path": "/chain1", "status": 301, "location": "/chain2" },
+  { "path": "/chain2", "status": 302, "location": "/new" },
+  { "path": "/loop", "status": 301, "location": "/loop" },
+  { "path": "/blog/*", "status": 301, "location": "/new-blog/*" },
+  { "path": "/gone", "status": 410, "body": "Gone" },
+  { "path": "/slow", "status": 200, "body": "slow page", "delay": 2.5 },
+  { "path": "/api/user", "status": 200, "headers": { "Content-Type": "application/json" }, "body": { "ok": true, "user": "sam" } },
+  { "path": "/meta-refresh", "meta_refresh": { "to": "/new", "seconds": 2 } }
+]
