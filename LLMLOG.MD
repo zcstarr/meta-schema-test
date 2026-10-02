@@ -21,3 +21,20 @@
 - User re-authed `gh`; repo already existed (created it themselves).
 - Fixed stale `github.com` RSA host key in `~/.ssh/known_hosts` (server presented `SHA256:uNiVztksCs...`, matches GitHub's published fingerprint).
 - Pushed `846ba4f` + `4c3554f` to `origin/main`. Remote: `git@github.com:zcstarr/meta-schema-test.git`. Tree clean.
+
+## 2026-10-02 - switched to schema.json
+- User replaced `schema.md` with `schema.json` (root + `v1.3/` + `v1.4/`); stale empty `.md` placeholders already removed.
+- No server change needed: clean URLs (`/schema`, `/v1.3/schema`) resolve to `.json`, verified `Content-Type: application/json` + CORS `*` on all three.
+- NOTE: root `schema.json` is 0 bytes (serves 200 empty); `v1.3` = 14474 B, `v1.4` = 28510 B.
+
+## 2026-10-02 - mirror meta.open-rpc.org at /
+- Real site serves the meta-schema JSON at `/` (200 application/json, S3/CloudFront); all other probed paths 403.
+- `serve.py` now mirrors that: `/` -> root `schema.json` if non-empty, else latest `--versions` entry (currently `v1.4`), as `application/json` with `ETag`/`Last-Modified` + `If-None-Match` -> 304.
+- `/<version>/` serves that version's `schema.json` the same way (mini-mirror per version).
+- Browsers (`Accept: text/html`, no json) still get the harness index at `/`; API clients (`*/*`, json) get schema JSON. Verified: `/` byte-matches `v1.4/schema.json`, 304 works, browser gets index.
+
+## 2026-10-02 - fix: browsers got HTML instead of raw JSON
+- Cause: my `Accept: text/html` sniffing at `/` and `/<version>/` returned the harness index / dir listing to browsers.
+- Fix: removed Accept negotiation. `/`, `/schema`, `/v1.3/`, `/v1.4/` etc. ALWAYS return raw `application/json`, browser or not.
+- Harness index moved to opt-in `/_index`.
+- Root `schema.json` is now populated (18039 B), so `/` serves it (no v1.4 fallback needed).

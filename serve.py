@@ -12,10 +12,14 @@ Usage:
     ./v1.3/...   -> http://host:port/v1.3/...
     ./v1.4/...   -> http://host:port/v1.4/...
     ./...        -> http://host:port/...      (root, shared)
-    /            -> harness index (lists versions, or ./index.html if present)
 
-  Clean URLs: extensionless resolve, so /v1.3/schema hits
-  ./v1.3/schema.html (or .md/.json if that's what exists).
+  Mirrors meta.open-rpc.org (which serves the schema JSON at /):
+    /            -> schema.json as application/json (+ ETag / 304);
+                    root schema.json if non-empty, else latest --versions entry.
+                    Always raw JSON, browsers included (no Accept sniffing).
+    /_index      -> harness index page (versions + sim endpoints).
+    /<version>/  -> that version's schema.json as application/json.
+    /v1.3/schema -> extensionless resolve (schema.html/.md/.json).
 
 Config (routes.json):
 [
@@ -156,20 +160,62 @@ class SimHandler(BaseHTTPRequestHandler):
             h.setdefault("Content-Type", "application/json")
         return self._send(status, h, body)
 
+    def _wants_html(self):
+        # harness index is opt-in only (/_index) so / is ALWAYS raw JSON,
+        # browsers included. never content-negotiate on Accept.
+        return False
+
+    def _serve_schema_doc(self, dir_fp):
+        # mirror meta.open-rpc.org: <dir>/schema.json as application/json,
+        # with ETag / Last-Modified + 304 like the S3/CloudFront origin.
+        # returns True if served, False if missing/empty (caller falls through)
+        fp = os.path.join(dir_fp, "schema.json")
+        if not (os.path.isfile(fp) and os.path.getsize(fp) > 0):
+            return False
+        st = os.stat(fp)
+        etag = f'"{int(st.st_mtime):x}-{st.st_size:x}"'
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            return True
+        with open(fp, "rb") as f:
+            data = f.read()
+        lastmod = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(st.st_mtime))
+        return self._send(200, {"Content-Type": "application/json",
+                               "ETag": etag, "Last-Modified": lastmod}, data) or True
+
     def _serve_static(self, path):
         # clean URLs: /v1.3/schema -> schema.html / schema.md / schema.json
         # versioned layout: /v1.3/... maps to ./v1.3/... on disk, no config needed
-        # "/" renders harness index when no ./index.html exists
+        # mirror meta.open-rpc.org: / serves schema JSON (application/json);
+        # /<version>/ serves that version's schema.json. browsers get index.
         rel = os.path.normpath(path.lstrip("/"))
         if rel == ".":
             rel = ""
         fp = os.path.join(self.serve_dir, rel)
 
-        # "/" harness index fallback
+        # "/" root — mirror the real site
         if rel == "" and os.path.isdir(fp):
-            idx = os.path.join(fp, "index.html")
-            if not os.path.isfile(idx):
+            if self._wants_html():
+                idx = os.path.join(fp, "index.html")
+                if os.path.isfile(idx):
+                    with open(idx, "rb") as f:
+                        return self._send(200, {"Content-Type": "text/html"}, f.read())
                 return self._serve_harness_index(fp)
+            if self._serve_schema_doc(fp):
+                return True
+            # no usable root schema.json -> latest version, else harness index
+            for v in reversed(self.versions):
+                if self._serve_schema_doc(os.path.join(fp, v)):
+                    return True
+            return self._serve_harness_index(fp)
+
+        # "/<version>/" — mini-mirror per version
+        if rel in self.versions and os.path.isdir(fp) and not self._wants_html():
+            if self._serve_schema_doc(fp):
+                return True
 
         if os.path.isdir(fp):
             idx = os.path.join(fp, "index.html")
@@ -285,6 +331,10 @@ class SimHandler(BaseHTTPRequestHandler):
     def _handle(self):
         method = self.command
         path, qs, _ = self._parse()
+
+        # harness index, opt-in
+        if path in ("/_index", "/_index/"):
+            return self._serve_harness_index(self.serve_dir)
 
         # CORS preflight — always allow
         if method == "OPTIONS":
