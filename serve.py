@@ -21,6 +21,13 @@ Usage:
     /<version>/  -> that version's schema.json as application/json.
     /v1.3/schema -> extensionless resolve (schema.html/.md/.json).
 
+  Schema lifecycle metadata (custom JSON Schema annotations):
+    x-schema-status: "deprecated" enables HTTP deprecation metadata.
+    x-deprecated-since: timezone-aware ISO 8601 timestamp -> Deprecation header.
+    x-replaced-by: replacement URI reference -> Link rel="successor-version".
+    Keep a user-facing warning in description for tools that omit HTTP headers.
+    Deprecated schemas remain available; no automatic redirect or Sunset date.
+
 Config (routes.json):
 [
   {"path": "/old", "status": 301, "location": "/new"},
@@ -52,6 +59,7 @@ import mimetypes
 import os
 import time
 import urllib.parse
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -172,19 +180,49 @@ class SimHandler(BaseHTTPRequestHandler):
         fp = os.path.join(dir_fp, "schema.json")
         if not (os.path.isfile(fp) and os.path.getsize(fp) > 0):
             return False
+        return self._serve_schema_file(fp)
+
+    def _schema_deprecation_headers(self, data):
+        try:
+            schema = json.loads(data)
+        except (ValueError, UnicodeDecodeError):
+            return {}
+        if not isinstance(schema, dict) or schema.get("x-schema-status") != "deprecated":
+            return {}
+
+        headers = {}
+        since = schema.get("x-deprecated-since")
+        if isinstance(since, str):
+            try:
+                deprecated_at = datetime.fromisoformat(since)
+                if deprecated_at.tzinfo is not None:
+                    headers["Deprecation"] = f"@{int(deprecated_at.timestamp())}"
+            except ValueError:
+                pass
+        replacement = schema.get("x-replaced-by")
+        if isinstance(replacement, str) and replacement:
+            headers["Link"] = f'<{replacement}>; rel="successor-version"; type="application/json"'
+        return headers
+
+    def _serve_schema_file(self, fp):
         st = os.stat(fp)
-        etag = f'"{int(st.st_mtime):x}-{st.st_size:x}"'
-        if self.headers.get("If-None-Match") == etag:
-            self.send_response(304)
-            self.send_header("ETag", etag)
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            return True
         with open(fp, "rb") as f:
             data = f.read()
+        etag = f'"{int(st.st_mtime):x}-{st.st_size:x}"'
         lastmod = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime(st.st_mtime))
-        return self._send(200, {"Content-Type": "application/json",
-                               "ETag": etag, "Last-Modified": lastmod}, data) or True
+        headers = {"Content-Type": "application/json", "ETag": etag,
+                   "Last-Modified": lastmod}
+        headers.update(self._schema_deprecation_headers(data))
+        if self.headers.get("If-None-Match") == etag:
+            # A 304 has no body; retain lifecycle and CORS headers for cached clients.
+            self.send_response(304)
+            headers.update({"Access-Control-Allow-Origin": "*",
+                            "Access-Control-Expose-Headers": "*"})
+            for name, value in headers.items():
+                self.send_header(name, value)
+            self.end_headers()
+            return True
+        return self._send(200, headers, data) or True
 
     def _serve_static(self, path):
         # clean URLs: /v1.3/schema -> schema.html / schema.md / schema.json
@@ -244,6 +282,8 @@ class SimHandler(BaseHTTPRequestHandler):
         if os.path.isfile(fp) and os.path.commonpath(
             [os.path.abspath(fp), self.serve_dir]
         ) == self.serve_dir:
+            if os.path.basename(fp) == "schema.json":
+                return self._serve_schema_file(fp)
             ctype = mimetypes.guess_type(fp)[0] or "application/octet-stream"
             if fp.endswith(".md"):
                 ctype = "text/markdown; charset=utf-8"
